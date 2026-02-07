@@ -1,9 +1,5 @@
 {
     "name": "picconv",
     "compatibility_date": "2026-02-07",
-    "type": "javascript",
-    "main": "src/index.ts",
-    "assets": {
-        "directory": "./dist"
-    }
+    "pages_build_output_dir": "./dist"
 }
