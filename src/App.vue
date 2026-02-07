@@ -27,13 +27,13 @@ const config = reactive({
 });
 
 const icoSizes: Record<number, boolean> = reactive({
-  16: true,
+  16: false,
   24: false,
   32: true,
-  48: true,
-  64: false,
-  128: false,
-  256: false,
+  48: false,
+  64: true,
+  128: true,
+  256: true,
 });
 
 const coordinates = ref<Coordinates>({ width: 0, height: 0, left: 0, top: 0 });
