@@ -500,7 +500,6 @@ const downloadImage = async () => {
                 <span class="text-[10px] text-gray-400">Max: {{ imageMeta.height }}</span>
               </div>
             </div>
-            <p class="text-xs text-gray-400 mt-2">※空欄の場合は比率固定を解除</p>
           </div>
 
           <div v-else-if="config.mode === 'free'">
