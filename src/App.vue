@@ -42,9 +42,18 @@ const coordinates = ref<Coordinates>({ width: 0, height: 0, left: 0, top: 0 });
 
 const isLoaded = computed(() => !!imgSrc.value);
 
+const getCustomAspectRatio = () => {
+  if (!Number.isFinite(customRatio.w) || !Number.isFinite(customRatio.h)) return null;
+  if (customRatio.w <= 0 || customRatio.h <= 0) return null;
+  return customRatio.w / customRatio.h;
+};
+
 const stencilProps = computed(() => {
   if (config.mode === 'ratio') {
-    if (config.aspectRatio === -1 && customRatio.h > 0) return { aspectRatio: customRatio.w / customRatio.h };
+    if (config.aspectRatio === -1) {
+      const ratio = getCustomAspectRatio();
+      return { aspectRatio: ratio ?? 0 };
+    }
     if (config.aspectRatio === -2 && imageMeta.width > 0 && imageMeta.height > 0) return { aspectRatio: imageMeta.width / imageMeta.height };
     if (config.aspectRatio > 0) return { aspectRatio: config.aspectRatio };
   }
@@ -92,6 +101,28 @@ const syncStencilToSize = () => {
   left = Math.min(Math.max(left, 0), maxLeft);
   top = Math.min(Math.max(top, 0), maxTop);
 
+  cropperRef.value.setCoordinates({ width, height, left, top }, { autoZoom: true });
+};
+
+const fitStencilToRatio = (ratio: number) => {
+  if (!cropperRef.value || config.mode !== 'ratio') return;
+  if (imageMeta.width <= 0 || imageMeta.height <= 0) return;
+  if (!Number.isFinite(ratio) || ratio <= 0) return;
+
+  const imageRatio = imageMeta.width / imageMeta.height;
+  let width = 0;
+  let height = 0;
+
+  if (imageRatio > ratio) {
+    height = imageMeta.height;
+    width = height * ratio;
+  } else {
+    width = imageMeta.width;
+    height = width / ratio;
+  }
+
+  const left = Math.max(0, (imageMeta.width - width) / 2);
+  const top = Math.max(0, (imageMeta.height - height) / 2);
   cropperRef.value.setCoordinates({ width, height, left, top }, { autoZoom: true });
 };
 
@@ -182,6 +213,20 @@ watch(
     if (!isLoaded.value) return;
     normalizeSizeConfig();
     syncStencilToSize();
+  },
+);
+
+watch(
+  () => [config.mode, config.aspectRatio, customRatio.w, customRatio.h, imageMeta.width, imageMeta.height],
+  () => {
+    if (!isLoaded.value || config.mode !== 'ratio') return;
+
+    let ratio: number | null = null;
+    if (config.aspectRatio === -1) ratio = getCustomAspectRatio();
+    if (config.aspectRatio === -2 && imageMeta.width > 0 && imageMeta.height > 0) ratio = imageMeta.width / imageMeta.height;
+    if (config.aspectRatio > 0) ratio = config.aspectRatio;
+
+    if (ratio) fitStencilToRatio(ratio);
   },
 );
 
