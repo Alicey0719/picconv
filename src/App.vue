@@ -392,13 +392,26 @@ const downloadImage = async () => {
   <div class="p-6 max-w-5xl mx-auto font-sans text-gray-800">
     <div class="flex justify-between items-center mb-6">
       <h1 class="text-2xl font-bold">Picture Converter</h1>
-      <input 
-        type="file" 
-        ref="fileInput"
-        accept="image/*" 
-        @change="onFileChange" 
-        class="hidden"
-      />
+      <div class="flex items-center gap-3 pr-2">
+        <a
+          href="https://github.com/Alicey0719/picconv"
+          target="_blank"
+          class="text-gray-500 hover:text-gray-900 transition"
+          aria-label="GitHub repository"
+          title="GitHub"
+        >
+          <svg class="w-5 h-5" viewBox="0 0 24 24" aria-hidden="true" fill="currentColor">
+            <path d="M12 2C6.48 2 2 6.58 2 12.24c0 4.52 2.87 8.35 6.84 9.7.5.1.68-.22.68-.49 0-.24-.01-.88-.01-1.73-2.78.62-3.37-1.38-3.37-1.38-.46-1.19-1.11-1.5-1.11-1.5-.9-.64.07-.63.07-.63 1 .07 1.53 1.06 1.53 1.06.89 1.56 2.34 1.11 2.91.85.09-.66.35-1.11.63-1.37-2.22-.26-4.56-1.14-4.56-5.06 0-1.12.39-2.03 1.03-2.75-.1-.26-.45-1.31.1-2.73 0 0 .84-.28 2.75 1.05A9.3 9.3 0 0 1 12 6.84a9.3 9.3 0 0 1 2.5.35c1.9-1.33 2.74-1.05 2.74-1.05.55 1.42.2 2.47.1 2.73.64.72 1.03 1.63 1.03 2.75 0 3.93-2.34 4.8-4.57 5.06.36.32.68.94.68 1.9 0 1.37-.01 2.47-.01 2.81 0 .27.18.6.69.49A10.01 10.01 0 0 0 22 12.24C22 6.58 17.52 2 12 2z" />
+          </svg>
+        </a>
+        <input 
+          type="file" 
+          ref="fileInput"
+          accept="image/*" 
+          @change="onFileChange" 
+          class="hidden"
+        />
+      </div>
       <!-- <button 
         @click="triggerUpload"
         class="bg-gray-800 text-white text-sm px-4 py-2 rounded hover:bg-gray-700 transition"
