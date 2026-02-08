@@ -185,6 +185,16 @@ watch(
   },
 );
 
+watch(
+  () => config.format,
+  (format) => {
+    if (format === 'ico') {
+      config.mode = 'ratio';
+      config.aspectRatio = 1;
+    }
+  },
+);
+
 // ICOファイル生成用ヘルパー関数
 const generateIcoFile = async (canvas: HTMLCanvasElement, sizes: number[]): Promise<Blob> => {
   const images: { size: number; data: Uint8Array }[] = [];
@@ -458,12 +468,12 @@ const downloadImage = async () => {
           <div v-else-if="config.mode === 'ratio'">
             <p class="text-sm mb-2 text-gray-600">アスペクト比</p>
             <select v-model.number="config.aspectRatio" class="border rounded p-1 w-full mb-3">
-              <option :value="-2">元の比率</option>
-              <option :value="1">1 : 1 (正方形)</option>
+              <option :value="-2">Original</option>
+              <option :value="1">1 : 1</option>
               <option :value="16/9">16 : 9</option>
               <option :value="4/3">4 : 3</option>
               <option :value="3/2">3 : 2</option>
-              <option :value="-1">カスタム比率...</option>
+              <option :value="-1">Custom...</option>
             </select>
 
             <div v-if="config.aspectRatio === -1" class="flex gap-2 items-center bg-white p-2 rounded border">
