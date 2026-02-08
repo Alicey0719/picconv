@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { ref, reactive, computed } from 'vue';
+import { ref, reactive, computed, watch } from 'vue';
 import { Cropper, type Coordinates, type CropperResult } from 'vue-advanced-cropper';
 import 'vue-advanced-cropper/dist/style.css';
 
 type OutputFormat = 'png' | 'jpeg' | 'webp' | 'ico';
 type BgColor = 'white' | 'black';
-type EditMode = 'ratio' | 'size';
+type EditMode = 'ratio' | 'size' | 'free';
 
 // --- State ---
 const imgSrc = ref<string | null>(null);
@@ -23,7 +23,7 @@ const config = reactive({
   mode: 'size' as EditMode,
   width: 0,
   height: 0,
-  aspectRatio: 0,
+  aspectRatio: -2,
 });
 
 const icoSizes: Record<number, boolean> = reactive({
@@ -54,6 +54,47 @@ const stencilProps = computed(() => {
   return { aspectRatio: 0 };
 });
 
+const normalizeSizeConfig = () => {
+  if (!Number.isFinite(config.width)) config.width = 0;
+  if (!Number.isFinite(config.height)) config.height = 0;
+
+  if (config.width < 0) config.width = 0;
+  if (config.height < 0) config.height = 0;
+
+  if (imageMeta.width > 0 && config.width > imageMeta.width) config.width = imageMeta.width;
+  if (imageMeta.height > 0 && config.height > imageMeta.height) config.height = imageMeta.height;
+
+  if (config.mode === 'size' && imageMeta.width > 0 && imageMeta.height > 0) {
+    if (config.width <= 0 && config.height <= 0) {
+      config.width = imageMeta.width;
+      config.height = imageMeta.height;
+    }
+  }
+};
+
+const syncStencilToSize = () => {
+  if (!cropperRef.value || config.mode !== 'size') return;
+  if (imageMeta.width <= 0 || imageMeta.height <= 0) return;
+  if (config.width <= 0 || config.height <= 0) return;
+
+  const width = Math.min(config.width, imageMeta.width);
+  const height = Math.min(config.height, imageMeta.height);
+  let left = coordinates.value.left;
+  let top = coordinates.value.top;
+
+  if (coordinates.value.width === 0 && coordinates.value.height === 0) {
+    left = Math.max(0, (imageMeta.width - width) / 2);
+    top = Math.max(0, (imageMeta.height - height) / 2);
+  }
+
+  const maxLeft = Math.max(0, imageMeta.width - width);
+  const maxTop = Math.max(0, imageMeta.height - height);
+  left = Math.min(Math.max(left, 0), maxLeft);
+  top = Math.min(Math.max(top, 0), maxTop);
+
+  cropperRef.value.setCoordinates({ width, height, left, top }, { autoZoom: true });
+};
+
 // --- Methods ---
 
 const triggerUpload = () => {
@@ -78,6 +119,10 @@ const processFile = (file: File) => {
     img.onload = () => {
       imageMeta.width = img.naturalWidth;
       imageMeta.height = img.naturalHeight;
+      config.width = imageMeta.width;
+      config.height = imageMeta.height;
+      normalizeSizeConfig();
+      syncStencilToSize();
     };
     img.src = result;
 
@@ -120,13 +165,25 @@ const checkMaxSize = (type: 'w' | 'h') => {
   if (config.width < 0) config.width = 0;
   if (config.height < 0) config.height = 0;
 
-  if (type === 'w' && config.width > imageMeta.width) config.width = imageMeta.width;
-  if (type === 'h' && config.height > imageMeta.height) config.height = imageMeta.height;
+  if (type === 'w' && imageMeta.width > 0 && config.width > imageMeta.width) config.width = imageMeta.width;
+  if (type === 'h' && imageMeta.height > 0 && config.height > imageMeta.height) config.height = imageMeta.height;
+
+  normalizeSizeConfig();
+  syncStencilToSize();
 };
 
 const onChange = ({ coordinates: coords }: CropperResult) => {
   coordinates.value = coords;
 };
+
+watch(
+  () => [config.mode, config.width, config.height, imageMeta.width, imageMeta.height],
+  () => {
+    if (!isLoaded.value) return;
+    normalizeSizeConfig();
+    syncStencilToSize();
+  },
+);
 
 // ICOファイル生成用ヘルパー関数
 const generateIcoFile = async (canvas: HTMLCanvasElement, sizes: number[]): Promise<Blob> => {
@@ -343,14 +400,18 @@ const downloadImage = async () => {
         
         <div>
           <h3 class="font-bold mb-2 border-b pb-1">編集モード</h3>
-          <div class="flex gap-4">
-            <label class="flex items-center cursor-pointer">
+          <div class="grid grid-cols-2 gap-3">
+            <label class="flex items-center gap-2 cursor-pointer">
               <input type="radio" v-model="config.mode" value="size" class="mr-2">
               サイズ指定
             </label>
-            <label class="flex items-center cursor-pointer">
+            <label class="flex items-center gap-2 cursor-pointer">
               <input type="radio" v-model="config.mode" value="ratio" class="mr-2">
               比率指定
+            </label>
+            <label class="flex items-center gap-2 cursor-pointer col-span-2">
+              <input type="radio" v-model="config.mode" value="free" class="mr-2">
+              フリー
             </label>
           </div>
         </div>
@@ -384,13 +445,19 @@ const downloadImage = async () => {
                 <span class="text-[10px] text-gray-400">Max: {{ imageMeta.height }}</span>
               </div>
             </div>
-            <p class="text-xs text-gray-400 mt-2">※空欄/0の場合は比率固定を解除</p>
+            <p class="text-xs text-gray-400 mt-2">※空欄の場合は比率固定を解除</p>
           </div>
 
-          <div v-else>
+          <div v-else-if="config.mode === 'free'">
+            <pre class="text-xs text-gray-600 leading-tight whitespace-pre font-sans">
+ /\_/\\
+( o.o )
+ > ^ <      </pre>
+          </div>
+
+          <div v-else-if="config.mode === 'ratio'">
             <p class="text-sm mb-2 text-gray-600">アスペクト比</p>
             <select v-model.number="config.aspectRatio" class="border rounded p-1 w-full mb-3">
-              <option :value="0">フリー (比率なし)</option>
               <option :value="-2">元の比率</option>
               <option :value="1">1 : 1 (正方形)</option>
               <option :value="16/9">16 : 9</option>
