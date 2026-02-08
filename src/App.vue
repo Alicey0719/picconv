@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import { ref, reactive, computed, watch } from 'vue';
+import { ref, reactive, computed, watch, nextTick } from 'vue';
 import { Cropper, type Coordinates, type CropperResult } from 'vue-advanced-cropper';
 import 'vue-advanced-cropper/dist/style.css';
+import heic2any from 'heic2any';
+import * as libheif from 'libheif-js/wasm-bundle';
 
 type OutputFormat = 'png' | 'jpeg' | 'webp' | 'ico';
 type BgColor = 'white' | 'black';
@@ -132,44 +134,152 @@ const triggerUpload = () => {
   fileInput.value?.click();
 };
 
+const isHeicType = (type: string) => /heic|heif/i.test(type);
+const isHeicFileName = (name: string) => /\.(heic|heif|hif)$/i.test(name);
+const isSupportedImage = (file: File) => file.type.startsWith('image/') || isHeicType(file.type) || isHeicFileName(file.name);
+
+const decodeHeifWithLibheif = async (file: File) => {
+  const data = new Uint8Array(await file.arrayBuffer());
+  const decoder = new libheif.HeifDecoder();
+  const images = decoder.decode(data);
+
+  if (!images || images.length === 0) throw new Error('no image');
+
+  const image = images[0];
+  const width = image.get_width();
+  const height = image.get_height();
+
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('no context');
+
+  const imageData = ctx.createImageData(width, height);
+  await new Promise<void>((resolve, reject) => {
+    image.display(imageData, (displayData: unknown) => {
+      if (!displayData) {
+        reject(new Error('heif display failed'));
+        return;
+      }
+      resolve();
+    });
+  });
+
+  ctx.putImageData(imageData, 0, 0);
+
+  const blob = await new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob((b) => {
+      if (!b) {
+        reject(new Error('blob failed'));
+        return;
+      }
+      resolve(b);
+    }, 'image/jpeg', 0.92);
+  });
+
+  const name = file.name.replace(/\.(heic|heif|hif)$/i, '.jpg');
+  return new File([blob], name, { type: 'image/jpeg' });
+};
+
+const convertHeicToJpeg = async (file: File) => {
+  try {
+    const converted = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.92 });
+    const blob = Array.isArray(converted) ? converted[0] : converted;
+    const name = file.name.replace(/\.(heic|heif|hif)$/i, '.jpg');
+    return new File([blob], name, { type: 'image/jpeg' });
+  } catch (_error) {
+    return decodeHeifWithLibheif(file);
+  }
+};
+
+const readAsDataUrl = (file: File) => new Promise<string>((resolve, reject) => {
+  const reader = new FileReader();
+  reader.onload = () => resolve(reader.result as string);
+  reader.onerror = () => reject(new Error('read failed'));
+  reader.readAsDataURL(file);
+});
+
+const loadImageMeta = (src: string) => new Promise<{ width: number; height: number }>((resolve, reject) => {
+  const img = new Image();
+  img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
+  img.onerror = () => reject(new Error('image load failed'));
+  img.src = src;
+});
+
+const getActiveRatio = () => {
+  if (config.aspectRatio === -1) return getCustomAspectRatio();
+  if (config.aspectRatio === -2 && imageMeta.width > 0 && imageMeta.height > 0) return imageMeta.width / imageMeta.height;
+  if (config.aspectRatio > 0) return config.aspectRatio;
+  return null;
+};
+
+const resetStencilForImage = async () => {
+  await nextTick();
+  if (!isLoaded.value) return;
+
+  if (config.mode === 'size') {
+    normalizeSizeConfig();
+    syncStencilToSize();
+    return;
+  }
+
+  if (config.mode === 'ratio') {
+    const ratio = getActiveRatio();
+    if (ratio) fitStencilToRatio(ratio);
+  }
+};
+
 // ファイル読み込みの共通処理
-const processFile = (file: File) => {
-  if (!file.type.startsWith('image/')) {
+const processFile = async (file: File) => {
+  if (!isSupportedImage(file)) {
     alert('画像ファイルのみ対応しています');
     return;
   }
-  
+
   fileName.value = file.name;
 
-  const reader = new FileReader();
-  reader.onload = (evt) => {
-    const result = evt.target?.result as string;
+  let sourceFile = file;
+  const isHeic = isHeicType(file.type) || isHeicFileName(file.name);
+
+  if (isHeic) {
+    try {
+      sourceFile = await convertHeicToJpeg(file);
+    } catch (_error) {
+      try {
+        const fallbackUrl = await readAsDataUrl(file);
+        await loadImageMeta(fallbackUrl);
+        sourceFile = file;
+      } catch (_fallbackError) {
+        alert('HEIC/HEIFの変換に失敗しました');
+        return;
+      }
+    }
+  }
+
+  try {
+    const result = await readAsDataUrl(sourceFile);
+    const meta = await loadImageMeta(result);
     imgSrc.value = result;
-    
-    const img = new Image();
-    img.onload = () => {
-      imageMeta.width = img.naturalWidth;
-      imageMeta.height = img.naturalHeight;
-      config.width = imageMeta.width;
-      config.height = imageMeta.height;
-      normalizeSizeConfig();
-      syncStencilToSize();
-    };
-    img.src = result;
+    imageMeta.width = meta.width;
+    imageMeta.height = meta.height;
+    config.width = imageMeta.width;
+    config.height = imageMeta.height;
+    coordinates.value = { width: 0, height: 0, left: 0, top: 0 };
+    await resetStencilForImage();
 
     // リセット
-    config.width = 0;
-    config.height = 0;
     isDragging.value = false;
-  };
-  reader.readAsDataURL(file);
+  } catch (_error) {
+    alert('画像の読み込みに失敗しました');
+  }
 };
 
 // inputタグからの変更イベント
-const onFileChange = (e: Event) => {
+const onFileChange = async (e: Event) => {
   const target = e.target as HTMLInputElement;
   if (target.files && target.files[0]) {
-    processFile(target.files[0]);
+    await processFile(target.files[0]);
   }
 };
 
@@ -184,11 +294,11 @@ const onDragLeave = (e: DragEvent) => {
   isDragging.value = false;
 };
 
-const onDrop = (e: DragEvent) => {
+const onDrop = async (e: DragEvent) => {
   e.preventDefault();
   isDragging.value = false;
   if (e.dataTransfer && e.dataTransfer.files.length > 0) {
-    processFile(e.dataTransfer.files[0]);
+    await processFile(e.dataTransfer.files[0]);
   }
 };
 
@@ -407,7 +517,7 @@ const downloadImage = async () => {
         <input 
           type="file" 
           ref="fileInput"
-          accept="image/*" 
+          accept="image/*,.heic,.heif,.hif" 
           @change="onFileChange" 
           class="hidden"
         />
